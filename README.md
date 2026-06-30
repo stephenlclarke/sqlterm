@@ -61,6 +61,14 @@ Build from source:
 git clone https://github.com/stephenlclarke/sqlterm
 cd sqlterm
 brew install unixodbc # macOS
+make build
+./bin/sqlterm
+```
+
+If you build directly with `go build`, build the whole `cmd` package rather
+than the single `cmd/main.go` file:
+
+```sh
 go build -o sqlterm ./cmd
 ./sqlterm
 ```
