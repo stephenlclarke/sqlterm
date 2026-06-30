@@ -82,9 +82,7 @@ security-scan:
 scan:
 	@if [ -z "$${SONAR_TOKEN:-}" ]; then \
 		printf 'SONAR_TOKEN is not configured; skipping SonarCloud analysis.\n'; \
-		exit 0; \
-	fi
-	@if command -v sonar-scanner >/dev/null 2>&1; then \
+	elif command -v sonar-scanner >/dev/null 2>&1; then \
 		sonar-scanner -Dsonar.token="$${SONAR_TOKEN}" $(SCAN_ARGS); \
 	else \
 		docker run --rm \
