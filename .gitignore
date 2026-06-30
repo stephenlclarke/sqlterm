@@ -1,2 +1,6 @@
 sqlterm
 main
+bin/
+reports/
+.scannerwork/
+coverage.out

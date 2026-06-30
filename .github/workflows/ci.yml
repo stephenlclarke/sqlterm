@@ -1,0 +1,174 @@
+---
+# yamllint disable rule:truthy rule:line-length
+
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.24.11"
+
+jobs:
+  commit-message-lint:
+    name: Commit Message Lint
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Lint pull request commits
+        run: >
+          npx --yes
+          --package @commitlint/cli
+          --package @commitlint/config-conventional
+          commitlint
+          --from "${{ github.event.pull_request.base.sha }}"
+          --to "${{ github.event.pull_request.head.sha }}"
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run gitleaks
+        run: make security-scan
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Build binary
+        run: make build
+      - name: Upload build artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: bin/**
+          if-no-files-found: error
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run unit tests with coverage gate
+        run: make coverage-check
+      - name: Upload unit test reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: |
+            reports/coverage.out
+            reports/unit-test-report.xml
+          if-no-files-found: error
+
+  quality:
+    name: Go Quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Run go vet
+        run: make vet
+      - name: Run staticcheck
+        run: make staticcheck
+
+  sonar-analysis:
+    name: SonarCloud Analysis
+    needs:
+      - unit-tests
+      - quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Download unit test reports
+        uses: actions/download-artifact@v4
+        with:
+          name: unit-test-reports
+          path: reports
+      - name: Verify Sonar reports
+        run: |
+          test -s reports/coverage.out
+          test -s reports/unit-test-report.xml
+      - name: Run Sonar scan when configured
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_PR_NUMBER: ${{ github.event.pull_request.number }}
+          SONAR_PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          SONAR_PR_BASE: ${{ github.event.pull_request.base.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          scan_args=()
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            scan_args+=("-Dsonar.pullrequest.key=${SONAR_PR_NUMBER}")
+            scan_args+=("-Dsonar.pullrequest.branch=${SONAR_PR_BRANCH}")
+            scan_args+=("-Dsonar.pullrequest.base=${SONAR_PR_BASE}")
+            scan_args+=("-Dsonar.pullrequest.provider=github")
+          fi
+
+          scan_arg_string=""
+          if [ "${#scan_args[@]}" -gt 0 ]; then
+            printf -v scan_arg_string '%q ' "${scan_args[@]}"
+          fi
+          make scan SCAN_ARGS="${scan_arg_string}"
+
+  release-build:
+    name: Release Build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: Build release binaries
+        run: make build-release
+      - name: Upload release artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: bin/**
+          if-no-files-found: error

@@ -1,8 +1,11 @@
 package databases
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 )
 
 type DatabaseCredentials struct {
@@ -15,27 +18,71 @@ type DatabaseCredentials struct {
 }
 
 func GetDatabases() ([]DatabaseCredentials, map[string]DatabaseCredentials, []string) {
-	// read the config file containing the database credentials
-	databases, err := ReadDatabasesJson()
+	databases, databaseMap, databaseKeys, err := LoadDatabases()
 	if err != nil {
-		fmt.Printf("Exiting: could not read databases file correctly. %v\n", err)
-		os.Exit(1)
-	} else if len(databases) == 0 {
-		fmt.Println("Exiting: database config file [~/.config/sqlterm/databases.json] contained no data")
+		fmt.Printf("Exiting: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Create a map of db envs to login credentials
-	databaseMap := make(map[string]DatabaseCredentials)
+	return databases, databaseMap, databaseKeys
+}
 
-	// Create an array of the db env keys (used for the cmdline args help)
+func LoadDatabases() ([]DatabaseCredentials, map[string]DatabaseCredentials, []string, error) {
+	databases, err := ReadDatabasesJson()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("could not read databases file correctly: %w", err)
+	}
+
+	databaseMap, databaseKeys, err := IndexDatabases(databases)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	return databases, databaseMap, databaseKeys, nil
+}
+
+func IndexDatabases(databases []DatabaseCredentials) (map[string]DatabaseCredentials, []string, error) {
+	if len(databases) == 0 {
+		return nil, nil, errors.New("database config file [~/.config/sqlterm/databases.json] contained no data")
+	}
+
+	databaseMap := make(map[string]DatabaseCredentials)
 	var databaseKeys []string
 
-	for _, db := range databases {
-		// fillout the db envs map and the array
+	for index, db := range databases {
+		if err := validateDatabase(index, db); err != nil {
+			return nil, nil, err
+		}
+		if _, exists := databaseMap[db.Key]; exists {
+			return nil, nil, fmt.Errorf("database config key [%s] is duplicated", db.Key)
+		}
+
 		databaseMap[db.Key] = db
 		databaseKeys = append(databaseKeys, db.Key)
 	}
 
-	return databases, databaseMap, databaseKeys
+	return databaseMap, databaseKeys, nil
+}
+
+func validateDatabase(index int, db DatabaseCredentials) error {
+	if strings.TrimSpace(db.Key) == "" {
+		return fmt.Errorf("database config entry [%d] is missing required key", index)
+	}
+	if strings.TrimSpace(db.Username) == "" {
+		return fmt.Errorf("database config entry [%s] is missing required username", db.Key)
+	}
+	if strings.TrimSpace(db.Hostname) == "" {
+		return fmt.Errorf("database config entry [%s] is missing required hostname", db.Key)
+	}
+	if strings.ContainsAny(db.Username+db.Hostname+db.Password+db.Port, "\r\n") {
+		return fmt.Errorf("database config entry [%s] contains an unsupported newline in credentials", db.Key)
+	}
+	if db.Port != "" {
+		port, err := strconv.Atoi(db.Port)
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("database config entry [%s] has invalid port [%s]", db.Key, db.Port)
+		}
+	}
+
+	return nil
 }
