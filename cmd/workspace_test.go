@@ -13,7 +13,7 @@ import (
 )
 
 func TestSQLWorkspaceFormatsSQL(t *testing.T) {
-	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{FormatAsTable: true}, nil)
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{FormatAsTable: true}, nil, nil)
 	model.editor.SetValue("select name from customers where note = 'select'")
 
 	model = model.formatSQL()
@@ -30,7 +30,7 @@ func TestSQLWorkspaceRejectsInvalidSQLBeforeExecution(t *testing.T) {
 	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, func(context.Context, databases.DatabaseCredentials, string) (odbcclient.QueryResult, error) {
 		t.Fatal("executor should not be called")
 		return odbcclient.QueryResult{}, nil
-	})
+	}, nil)
 	model.editor.SetValue("select from")
 
 	updated, cmd := model.executeSQL()
@@ -60,7 +60,7 @@ func TestSQLWorkspaceExecutesQueryAndStoresResult(t *testing.T) {
 			Duration:     time.Millisecond,
 			ExecutedAt:   time.Unix(100, 0).UTC(),
 		}, nil
-	})
+	}, nil)
 	model.editor.SetValue("select id from orders")
 
 	updated, cmd := model.executeSQL()
@@ -84,7 +84,7 @@ func TestSQLWorkspaceStoresExecutionError(t *testing.T) {
 	want := errors.New("query failed")
 	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, func(context.Context, databases.DatabaseCredentials, string) (odbcclient.QueryResult, error) {
 		return odbcclient.QueryResult{}, want
-	})
+	}, nil)
 	model.editor.SetValue("select id from orders")
 
 	updated, cmd := model.executeSQL()
@@ -98,7 +98,7 @@ func TestSQLWorkspaceStoresExecutionError(t *testing.T) {
 }
 
 func TestSQLWorkspaceUpdateValidationStatus(t *testing.T) {
-	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil)
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, nil)
 
 	model.editor.SetValue("")
 	model.updateValidationStatus()
@@ -114,7 +114,7 @@ func TestSQLWorkspaceUpdateValidationStatus(t *testing.T) {
 }
 
 func TestSQLWorkspaceUpdateFormatsWithCtrlF(t *testing.T) {
-	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil)
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, nil)
 	model.editor.SetValue("select id from orders")
 
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlF})
@@ -134,7 +134,7 @@ func TestSQLWorkspaceUpdateFormatsWithCtrlF(t *testing.T) {
 func TestSQLWorkspaceUpdateRunsWithCtrlR(t *testing.T) {
 	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, func(context.Context, databases.DatabaseCredentials, string) (odbcclient.QueryResult, error) {
 		return odbcclient.QueryResult{Statement: "SELECT 1"}, nil
-	})
+	}, nil)
 	model.editor.SetValue("select 1")
 
 	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
@@ -149,7 +149,7 @@ func TestSQLWorkspaceUpdateRunsWithCtrlR(t *testing.T) {
 }
 
 func TestSQLWorkspaceUpdateStoresQueryResultMessage(t *testing.T) {
-	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil)
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, nil)
 	result := odbcclient.QueryResult{Statement: "SELECT 1"}
 
 	updated, cmd := model.Update(queryExecutedMsg{result: result})
@@ -164,7 +164,7 @@ func TestSQLWorkspaceUpdateStoresQueryResultMessage(t *testing.T) {
 }
 
 func TestSQLWorkspaceUpdateStoresQueryErrorMessage(t *testing.T) {
-	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil)
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, nil)
 	want := errors.New("boom")
 
 	updated, _ := model.Update(queryExecutedMsg{err: want})
@@ -176,7 +176,7 @@ func TestSQLWorkspaceUpdateStoresQueryErrorMessage(t *testing.T) {
 }
 
 func TestSQLWorkspaceUpdateQuit(t *testing.T) {
-	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil)
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, nil)
 
 	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
@@ -184,8 +184,119 @@ func TestSQLWorkspaceUpdateQuit(t *testing.T) {
 	}
 }
 
+func TestSQLWorkspaceLoadsExplorerSnapshot(t *testing.T) {
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, func(context.Context, databases.DatabaseCredentials) (odbcclient.ExplorerSnapshot, error) {
+		return workspaceExplorerSnapshot(), nil
+	})
+
+	msg := model.loadExplorer()()
+	updated, _ := model.Update(msg)
+	model = updated.(sqlWorkspaceModel)
+
+	if model.explorerLoading || model.explorerErr != nil {
+		t.Fatalf("unexpected explorer state: loading=%v err=%v", model.explorerLoading, model.explorerErr)
+	}
+	view := model.View()
+	for _, want := range []string{"Explorer", "Loaded 1 database(s).", "Trading", "Tables (1)"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("expected %q in view:\n%s", want, view)
+		}
+	}
+}
+
+func TestSQLWorkspaceStoresExplorerLoadError(t *testing.T) {
+	want := errors.New("metadata failed")
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, func(context.Context, databases.DatabaseCredentials) (odbcclient.ExplorerSnapshot, error) {
+		return odbcclient.ExplorerSnapshot{}, want
+	})
+
+	msg := model.loadExplorer()()
+	updated, _ := model.Update(msg)
+	model = updated.(sqlWorkspaceModel)
+
+	if !errors.Is(model.explorerErr, want) || model.explorerStatus != "Explorer metadata unavailable." {
+		t.Fatalf("unexpected explorer error state: %#v", model)
+	}
+}
+
+func TestSQLWorkspaceExplorerNavigationWhenFocused(t *testing.T) {
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, nil)
+	model.tree = newExplorerTree(workspaceExplorerSnapshot())
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = updated.(sqlWorkspaceModel)
+	if model.activePane != paneExplorer {
+		t.Fatalf("expected explorer pane to be active, got %v", model.activePane)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
+	model = updated.(sqlWorkspaceModel)
+	if model.tree.cursor != 1 {
+		t.Fatalf("expected explorer cursor to move, got %d", model.tree.cursor)
+	}
+
+	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = updated.(sqlWorkspaceModel)
+	if rows := model.tree.visibleRows(); containsExplorerRow(rows, "Tables (1)") {
+		t.Fatalf("expected selected database to collapse, got %#v", rows)
+	}
+}
+
+func TestSQLWorkspaceRefreshesExplorer(t *testing.T) {
+	called := false
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, func(context.Context, databases.DatabaseCredentials) (odbcclient.ExplorerSnapshot, error) {
+		called = true
+		return workspaceExplorerSnapshot(), nil
+	})
+	model.explorerLoading = false
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyCtrlE})
+	model = updated.(sqlWorkspaceModel)
+	if cmd == nil || !model.explorerLoading || model.explorerStatus != "Refreshing database explorer..." {
+		t.Fatalf("unexpected refresh state: %#v", model)
+	}
+
+	updated, _ = model.Update(cmd())
+	model = updated.(sqlWorkspaceModel)
+	if !called || model.explorerErr != nil || !strings.Contains(model.explorerStatus, "Loaded") {
+		t.Fatalf("unexpected refreshed model: %#v", model)
+	}
+}
+
+func TestSQLWorkspaceResizeUpdatesEditorWidth(t *testing.T) {
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, nil)
+
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
+	model = updated.(sqlWorkspaceModel)
+
+	if model.width != 140 || model.height != 40 || model.editor.Width() < minEditorWidth {
+		t.Fatalf("unexpected resize state: width=%d height=%d editor=%d", model.width, model.height, model.editor.Width())
+	}
+}
+
+func TestExplorerStatusReportsWarnings(t *testing.T) {
+	status := explorerStatus(odbcclient.ExplorerSnapshot{
+		Warnings: []string{"indexes unavailable"},
+	})
+	if status != "Loaded with 1 warning(s)." {
+		t.Fatalf("unexpected explorer warning status: %q", status)
+	}
+}
+
+func TestClipLineHandlesNarrowWidths(t *testing.T) {
+	if got := clipLine("abcdef", 2); got != "ab" {
+		t.Fatalf("unexpected narrow clip: %q", got)
+	}
+	if got := clipLine("abcdef", 4); got != "a..." {
+		t.Fatalf("unexpected clipped line: %q", got)
+	}
+	if got := clipLine("abc", 0); got != "abc" {
+		t.Fatalf("unexpected zero-width clip: %q", got)
+	}
+}
+
 func TestSQLWorkspaceExecuteRequiresExecutor(t *testing.T) {
-	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil)
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, nil)
 	model.editor.SetValue("select 1")
 
 	updated, cmd := model.executeSQL()
@@ -200,7 +311,7 @@ func TestSQLWorkspaceExecuteRequiresExecutor(t *testing.T) {
 }
 
 func TestSQLWorkspaceInitReturnsBlinkCommand(t *testing.T) {
-	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil)
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, nil)
 
 	if cmd := model.Init(); cmd == nil {
 		t.Fatal("expected blink command")
@@ -208,7 +319,7 @@ func TestSQLWorkspaceInitReturnsBlinkCommand(t *testing.T) {
 }
 
 func TestSQLWorkspaceViewShowsErrorRunningAndResult(t *testing.T) {
-	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil)
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, nil, nil)
 	model.err = errors.New("bad syntax")
 	model.running = true
 	model.result = odbcclient.QueryResult{

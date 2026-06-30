@@ -78,11 +78,19 @@ picker. Use up/down or `j`/`k` to move, `enter` to connect, or `q` to quit.
 SQLTerm then opens its own query workspace using credentials from
 `~/.config/sqlterm/databases.json`.
 
-After a database is selected, SQLTerm opens an interactive SQL workspace. Enter
-SQL, use `Ctrl+F` to validate and uppercase SQL keywords while preserving string
-values and identifiers, then use `Ctrl+R` to send the query over ODBC. Results
-are displayed in the terminal with execution metrics including duration,
-returned rows, affected rows, column count, and execution timestamp.
+After a database is selected, SQLTerm opens an interactive SQL workspace with a
+database explorer panel on the left and the SQL editor on the right. The
+explorer loads database metadata over ODBC and renders a tree of databases,
+tables, columns, views, indexes, functions, and observed data types. Use `Tab`
+to switch between the explorer and query editor. In the explorer, use
+up/down or `j`/`k` to move, `enter` or space to expand and collapse nodes, and
+`Ctrl+E` to refresh metadata.
+
+Enter SQL in the editor, use `Ctrl+F` to validate and uppercase SQL keywords
+while preserving string values and identifiers, then use `Ctrl+R` to send the
+query over ODBC. Results are displayed in the terminal with execution metrics
+including duration, returned rows, affected rows, column count, and execution
+timestamp.
 
 ## Development
 
