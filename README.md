@@ -13,7 +13,7 @@
 [![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_sqlterm&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_sqlterm)
 [![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=stephenlclarke_sqlterm&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=stephenlclarke_sqlterm)
 
-Connect in a easy way to the database you need without having to memorize the credentials.
+Connect in an easy way to the database you need without having to memorize the credentials.
 
 ## Installation
 
@@ -34,13 +34,17 @@ touch databases.json
       "key": "dev",
       "shortname": "<short name to be displayed>",
       "username": "<database username>",
-      "hostname": "<database hostname or ip>",
+      "dsn": "<ODBC DSN name>",
       "password": "<database password>",
-      "port": "<database port>"
+      "database": "<optional database name>"
     }
   ]
 }
 ```
+
+SQLTerm accepts `dsn`, `connection_string`, or `driver` plus `hostname` as the
+ODBC endpoint. Credentials remain in the config file and are passed directly to
+the Go ODBC driver; no external `isql` client is required.
 
 ## Quick Start
 
@@ -54,19 +58,31 @@ brew install --HEAD stephenlclarke/tap/sqlterm
 Build from source:
 
 ```sh
-git clone https://github.com/jpxcz/sqlterm
-# in the future we will need to get the dependencies `go get .`
+git clone https://github.com/stephenlclarke/sqlterm
 cd sqlterm
-go build -o sqlterm ./cmd/main.go
+brew install unixodbc # macOS
+go build -o sqlterm ./cmd
 ./sqlterm
 ```
 
-Use `-env` to select a configured key and `-table=YES` to ask the MySQL client
-to format results as tables:
+Use `-env` to select a configured key and `-table=YES` to render query results
+as tables:
 
 ```sh
+sqlterm
 sqlterm -env dev -table=YES
 ```
+
+Running `sqlterm` without `-env` opens an interactive Bubble Tea database
+picker. Use up/down or `j`/`k` to move, `enter` to connect, or `q` to quit.
+SQLTerm then opens its own query workspace using credentials from
+`~/.config/sqlterm/databases.json`.
+
+After a database is selected, SQLTerm opens an interactive SQL workspace. Enter
+SQL, use `Ctrl+F` to validate and uppercase SQL keywords while preserving string
+values and identifiers, then use `Ctrl+R` to send the query over ODBC. Results
+are displayed in the terminal with execution metrics including duration,
+returned rows, affected rows, column count, and execution timestamp.
 
 ## Development
 
@@ -84,11 +100,10 @@ There is no local deploy target; tag builds produce release artefacts.
 
 ## Limitations
 
-Currently only supported MySQL.
+Currently supports SQL execution through configured ODBC endpoints.
 
 ## TODOs
 
-- [ ] Add BubbleTea for a better UX interface
 - [ ] Allow to send a sql files to the connection
   - [ ] Allow to send sql files to multiple databases
 - [ ] Command to do dump of one or multiple databases

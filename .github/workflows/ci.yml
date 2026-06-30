@@ -63,6 +63,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: Install ODBC headers
+        run: sudo apt-get update && sudo apt-get install -y unixodbc-dev
       - name: Build binary
         run: make build
       - name: Upload build artefacts
@@ -82,6 +84,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: Install ODBC headers
+        run: sudo apt-get update && sudo apt-get install -y unixodbc-dev
       - name: Run unit tests with coverage gate
         run: make coverage-check
       - name: Upload unit test reports
@@ -101,6 +105,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: Install ODBC headers
+        run: sudo apt-get update && sudo apt-get install -y unixodbc-dev
       - name: Run go vet
         run: make vet
       - name: Run staticcheck
@@ -164,6 +170,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - name: Install ODBC headers
+        run: sudo apt-get update && sudo apt-get install -y unixodbc-dev
       - name: Build release binaries
         run: make build-release
       - name: Upload release artefacts

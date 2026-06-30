@@ -9,23 +9,30 @@ import (
 	"strings"
 
 	"github.com/jpxcz/sqlterm/databases"
-	mysqlclient "github.com/jpxcz/sqlterm/mysql_client"
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Stdin, os.Stdout, databases.LoadDatabases, mysqlclient.ExecMySqlClient); err != nil {
+	if err := run(os.Args[1:], os.Stdin, os.Stdout, databases.LoadDatabases, runDatabaseSelector, runSQLWorkspace); err != nil {
 		fmt.Fprintf(os.Stderr, "Exiting: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 type databaseLoader func() ([]databases.DatabaseCredentials, map[string]databases.DatabaseCredentials, []string, error)
-type mysqlExecutor func(mysqlclient.Config) error
+type databaseSelector func(io.Reader, io.Writer, []databases.DatabaseCredentials) (databases.DatabaseCredentials, error)
+type sqlWorkspace func(io.Reader, io.Writer, databases.DatabaseCredentials, workspaceOptions) error
 
-func run(args []string, input io.Reader, output io.Writer, loadDatabases databaseLoader, execMySQL mysqlExecutor) error {
+type workspaceOptions struct {
+	FormatAsTable bool
+}
+
+func run(args []string, input io.Reader, output io.Writer, loadDatabases databaseLoader, selectDatabase databaseSelector, openWorkspace sqlWorkspace) error {
 	dbs, databaseMap, databaseKeys, err := loadDatabases()
 	if err != nil {
 		return err
+	}
+	if len(dbs) == 0 {
+		return fmt.Errorf("database config file [~/.config/sqlterm/databases.json] contained no data")
 	}
 
 	fs := flag.NewFlagSet("sqlterm", flag.ContinueOnError)
@@ -49,33 +56,15 @@ func run(args []string, input io.Reader, output io.Writer, loadDatabases databas
 			return fmt.Errorf("unknown database environment [%s]; valid values are [%s]", dbEnv, strings.Join(databaseKeys, ","))
 		}
 
-		return execMySQL(configFromCredentials(dbCreds, bool(table)))
+		return openWorkspace(input, output, dbCreds, workspaceOptions{FormatAsTable: bool(table)})
 	}
 
-	fmt.Fprintln(output, "Welcome, please select one of the databases to connect")
-	for i, db := range dbs {
-		fmt.Fprintf(output, "[%d] %s - %s\n", i, db.Key, db.ShortName)
+	dbCreds, err := selectDatabase(input, output, dbs)
+	if err != nil {
+		return err
 	}
 
-	var selection int
-	if _, err := fmt.Fscan(input, &selection); err != nil {
-		return fmt.Errorf("could not read database selection: %w", err)
-	}
-	if selection < 0 || selection >= len(dbs) {
-		return fmt.Errorf("option [%d] selected is not in range of the databases", selection)
-	}
-
-	return execMySQL(configFromCredentials(dbs[selection], bool(table)))
-}
-
-func configFromCredentials(db databases.DatabaseCredentials, formatAsTable bool) mysqlclient.Config {
-	return mysqlclient.Config{
-		Username:      db.Username,
-		Hostname:      db.Hostname,
-		Password:      db.Password,
-		Port:          db.Port,
-		FormatAsTable: formatAsTable,
-	}
+	return openWorkspace(input, output, dbCreds, workspaceOptions{FormatAsTable: bool(table)})
 }
 
 type tableFlag bool

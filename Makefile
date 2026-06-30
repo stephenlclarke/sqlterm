@@ -13,7 +13,16 @@ GO_JUNIT_REPORT_VERSION ?= v2.1.0
 STATICCHECK_VERSION ?= v0.6.1
 GITLEAKS_VERSION ?= v8.30.1
 COVERAGE_MIN ?= 90.0
-RELEASE_TARGETS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64
+RELEASE_TARGETS ?= $(shell $(GO) env GOOS)/$(shell $(GO) env GOARCH)
+UNAME_S := $(shell uname -s)
+
+ifeq ($(UNAME_S),Darwin)
+ODBC_PREFIX := $(shell brew --prefix unixodbc 2>/dev/null || true)
+ifneq ($(ODBC_PREFIX),)
+export CGO_CFLAGS := -I$(ODBC_PREFIX)/include $(CGO_CFLAGS)
+export CGO_LDFLAGS := -L$(ODBC_PREFIX)/lib $(CGO_LDFLAGS)
+endif
+endif
 
 .PHONY: all build build-release clean ci coverage-check help run scan security-scan staticcheck test vet
 
@@ -31,7 +40,7 @@ build-release:
 		extension=""; \
 		if [ "$${target_os}" = "windows" ]; then extension=".exe"; fi; \
 		printf 'Building %s/%s\n' "$${target_os}" "$${target_arch}"; \
-		CGO_ENABLED=0 GOOS="$${target_os}" GOARCH="$${target_arch}" \
+		CGO_ENABLED=1 GOOS="$${target_os}" GOARCH="$${target_arch}" \
 			$(GO) build -trimpath -o "$(BUILD_DIR)/$(BINARY_NAME)_$${target_os}_$${target_arch}$${extension}" ./cmd; \
 	done
 

@@ -32,13 +32,13 @@ func TestIndexDatabasesRequiresUsername(t *testing.T) {
 	}
 }
 
-func TestIndexDatabasesRequiresHostname(t *testing.T) {
+func TestIndexDatabasesRequiresODBCEndpoint(t *testing.T) {
 	_, _, err := IndexDatabases([]DatabaseCredentials{{
 		Key:      "dev",
 		Username: "user",
 	}})
-	if err == nil || !strings.Contains(err.Error(), "missing required hostname") {
-		t.Fatalf("expected missing hostname error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "missing required ODBC endpoint") {
+		t.Fatalf("expected missing endpoint error, got %v", err)
 	}
 }
 

@@ -9,12 +9,16 @@ import (
 )
 
 type DatabaseCredentials struct {
-	Key       string `json:"key"`
-	ShortName string `json:"shortname"`
-	Username  string `json:"username"`
-	Hostname  string `json:"hostname"`
-	Password  string `json:"password"`
-	Port      string `json:"port"`
+	Key              string `json:"key"`
+	ShortName        string `json:"shortname"`
+	Username         string `json:"username"`
+	Hostname         string `json:"hostname"`
+	Password         string `json:"password"`
+	Port             string `json:"port"`
+	DSN              string `json:"dsn"`
+	Driver           string `json:"driver"`
+	Database         string `json:"database"`
+	ConnectionString string `json:"connection_string"`
 }
 
 func GetDatabases() ([]DatabaseCredentials, map[string]DatabaseCredentials, []string) {
@@ -72,9 +76,11 @@ func validateDatabase(index int, db DatabaseCredentials) error {
 		return fmt.Errorf("database config entry [%s] is missing required username", db.Key)
 	}
 	if strings.TrimSpace(db.Hostname) == "" {
-		return fmt.Errorf("database config entry [%s] is missing required hostname", db.Key)
+		if strings.TrimSpace(db.DSN) == "" && strings.TrimSpace(db.Driver) == "" && strings.TrimSpace(db.ConnectionString) == "" {
+			return fmt.Errorf("database config entry [%s] is missing required ODBC endpoint", db.Key)
+		}
 	}
-	if strings.ContainsAny(db.Username+db.Hostname+db.Password+db.Port, "\r\n") {
+	if strings.ContainsAny(db.Username+db.Hostname+db.Password+db.Port+db.DSN+db.Driver+db.Database+db.ConnectionString, "\r\n") {
 		return fmt.Errorf("database config entry [%s] contains an unsupported newline in credentials", db.Key)
 	}
 	if db.Port != "" {

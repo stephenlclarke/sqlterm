@@ -3,151 +3,115 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
 
 	"github.com/jpxcz/sqlterm/databases"
-	mysqlclient "github.com/jpxcz/sqlterm/mysql_client"
 )
 
 func TestRunReturnsLoaderError(t *testing.T) {
 	want := errors.New("load failed")
 	err := run(nil, strings.NewReader(""), &bytes.Buffer{}, func() ([]databases.DatabaseCredentials, map[string]databases.DatabaseCredentials, []string, error) {
 		return nil, nil, nil, want
-	}, func(mysqlclient.Config) error {
-		t.Fatal("mysql should not be executed")
-		return nil
-	})
+	}, testSelector(0), testWorkspace(nil, nil))
 	if !errors.Is(err, want) {
 		t.Fatalf("expected loader error, got %v", err)
 	}
 }
 
+func TestRunRejectsEmptyDatabases(t *testing.T) {
+	err := run(nil, strings.NewReader(""), &bytes.Buffer{}, func() ([]databases.DatabaseCredentials, map[string]databases.DatabaseCredentials, []string, error) {
+		return nil, nil, nil, nil
+	}, testSelector(0), testWorkspace(nil, nil))
+	if err == nil || !strings.Contains(err.Error(), "contained no data") {
+		t.Fatalf("expected empty database error, got %v", err)
+	}
+}
+
 func TestRunRejectsUnknownFlag(t *testing.T) {
-	err := run([]string{"-missing"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, func(mysqlclient.Config) error {
-		t.Fatal("mysql should not be executed")
-		return nil
-	})
+	err := run([]string{"-missing"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, testSelector(0), testWorkspace(nil, nil))
 	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined") {
 		t.Fatalf("expected flag parse error, got %v", err)
 	}
 }
 
 func TestRunRejectsUnknownEnv(t *testing.T) {
-	err := run([]string{"-env", "missing"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, func(mysqlclient.Config) error {
-		t.Fatal("mysql should not be executed")
-		return nil
-	})
+	err := run([]string{"-env", "missing"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, testSelector(0), testWorkspace(nil, nil))
 	if err == nil || !strings.Contains(err.Error(), "unknown database environment") {
 		t.Fatalf("expected unknown env error, got %v", err)
 	}
 }
 
 func TestRunHonorsTableNo(t *testing.T) {
-	var got mysqlclient.Config
-	err := run([]string{"-env", "dev", "-table=NO"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, func(config mysqlclient.Config) error {
-		got = config
-		return nil
-	})
+	var got workspaceCapture
+	err := run([]string{"-env", "dev", "-table=NO"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, testSelector(0), testWorkspace(&got, nil))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got.FormatAsTable {
+	if got.options.FormatAsTable {
 		t.Fatal("expected -table=NO to disable table formatting")
 	}
 }
 
 func TestRunHonorsTableYesAndPort(t *testing.T) {
-	var got mysqlclient.Config
-	err := run([]string{"-env", "dev", "-table=YES"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, func(config mysqlclient.Config) error {
-		got = config
-		return nil
-	})
+	var got workspaceCapture
+	err := run([]string{"-env", "dev", "-table=YES"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, testSelector(0), testWorkspace(&got, nil))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !got.FormatAsTable {
+	if !got.options.FormatAsTable {
 		t.Fatal("expected -table=YES to enable table formatting")
 	}
-	if got.Port != "3307" {
-		t.Fatalf("expected port 3307, got %q", got.Port)
+	if got.database.Port != "3307" {
+		t.Fatalf("expected port 3307, got %q", got.database.Port)
 	}
 }
 
 func TestRunHonorsBareTableFlag(t *testing.T) {
-	var got mysqlclient.Config
-	err := run([]string{"-env", "dev", "-table"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, func(config mysqlclient.Config) error {
-		got = config
-		return nil
-	})
+	var got workspaceCapture
+	err := run([]string{"-env", "dev", "-table"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, testSelector(0), testWorkspace(&got, nil))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !got.FormatAsTable {
+	if !got.options.FormatAsTable {
 		t.Fatal("expected bare -table to enable table formatting")
 	}
 }
 
-func TestRunReturnsExecError(t *testing.T) {
-	want := errors.New("mysql failed")
-	err := run([]string{"-env", "dev"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, func(mysqlclient.Config) error {
-		return want
-	})
+func TestRunReturnsWorkspaceError(t *testing.T) {
+	want := errors.New("workspace failed")
+	err := run([]string{"-env", "dev"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, testSelector(0), testWorkspace(nil, want))
 	if !errors.Is(err, want) {
-		t.Fatalf("expected mysql error, got %v", err)
+		t.Fatalf("expected workspace error, got %v", err)
 	}
 }
 
 func TestRunRejectsInvalidTableValue(t *testing.T) {
-	err := run([]string{"-env", "dev", "-table=maybe"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, func(mysqlclient.Config) error {
-		t.Fatal("mysql should not be executed")
-		return nil
-	})
+	err := run([]string{"-env", "dev", "-table=maybe"}, strings.NewReader(""), &bytes.Buffer{}, testLoader, testSelector(0), testWorkspace(nil, nil))
 	if err == nil || !strings.Contains(err.Error(), "invalid table value") {
 		t.Fatalf("expected invalid table error, got %v", err)
 	}
 }
 
-func TestRunRejectsUnreadableSelection(t *testing.T) {
-	err := run(nil, strings.NewReader("not-a-number\n"), &bytes.Buffer{}, testLoader, func(mysqlclient.Config) error {
-		t.Fatal("mysql should not be executed")
-		return nil
-	})
-	if err == nil || !strings.Contains(err.Error(), "could not read database selection") {
-		t.Fatalf("expected selection read error, got %v", err)
-	}
-}
-
-func TestRunRejectsNegativeSelection(t *testing.T) {
-	err := run(nil, strings.NewReader("-1\n"), &bytes.Buffer{}, testLoader, func(mysqlclient.Config) error {
-		t.Fatal("mysql should not be executed")
-		return nil
-	})
-	if err == nil || !strings.Contains(err.Error(), "not in range") {
-		t.Fatalf("expected selection range error, got %v", err)
-	}
-}
-
-func TestRunRejectsOutOfRangeSelection(t *testing.T) {
-	err := run(nil, strings.NewReader("1\n"), &bytes.Buffer{}, testLoader, func(mysqlclient.Config) error {
-		t.Fatal("mysql should not be executed")
-		return nil
-	})
-	if err == nil || !strings.Contains(err.Error(), "not in range") {
-		t.Fatalf("expected selection range error, got %v", err)
+func TestRunReturnsSelectorError(t *testing.T) {
+	want := errors.New("selector failed")
+	err := run(nil, strings.NewReader(""), &bytes.Buffer{}, testLoader, func(io.Reader, io.Writer, []databases.DatabaseCredentials) (databases.DatabaseCredentials, error) {
+		return databases.DatabaseCredentials{}, want
+	}, testWorkspace(nil, nil))
+	if !errors.Is(err, want) {
+		t.Fatalf("expected selector error, got %v", err)
 	}
 }
 
 func TestRunExecutesSelectedDatabase(t *testing.T) {
-	var got mysqlclient.Config
-	err := run(nil, strings.NewReader("0\n"), &bytes.Buffer{}, testLoader, func(config mysqlclient.Config) error {
-		got = config
-		return nil
-	})
+	var got workspaceCapture
+	err := run(nil, strings.NewReader("0\n"), &bytes.Buffer{}, testLoader, testSelector(0), testWorkspace(&got, nil))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if got.Username != "user" || got.Hostname != "localhost" || got.Password != "secret" || got.Port != "3307" {
+	if got.database.Username != "user" || got.database.Hostname != "localhost" || got.database.Password != "secret" || got.database.Port != "3307" {
 		t.Fatalf("unexpected config: %#v", got)
 	}
 }
@@ -181,4 +145,30 @@ func testLoader() ([]databases.DatabaseCredentials, map[string]databases.Databas
 	}}
 	dbMap, keys, err := databases.IndexDatabases(dbs)
 	return dbs, dbMap, keys, err
+}
+
+func testSelector(index int) databaseSelector {
+	return func(_ io.Reader, _ io.Writer, dbs []databases.DatabaseCredentials) (databases.DatabaseCredentials, error) {
+		if index < 0 || index >= len(dbs) {
+			return databases.DatabaseCredentials{}, fmt.Errorf("test selector index [%d] is out of range", index)
+		}
+
+		return dbs[index], nil
+	}
+}
+
+type workspaceCapture struct {
+	database databases.DatabaseCredentials
+	options  workspaceOptions
+}
+
+func testWorkspace(capture *workspaceCapture, err error) sqlWorkspace {
+	return func(_ io.Reader, _ io.Writer, db databases.DatabaseCredentials, options workspaceOptions) error {
+		if capture != nil {
+			capture.database = db
+			capture.options = options
+		}
+
+		return err
+	}
 }
