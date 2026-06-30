@@ -1,6 +1,8 @@
 package mysqlclient
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +21,14 @@ func TestBuildMySQLArgsKeepsPasswordOutOfArgv(t *testing.T) {
 	}
 	if strings.Contains(joined, "secret") || strings.Contains(joined, "-p") {
 		t.Fatalf("password leaked into argv: %#v", args)
+	}
+}
+
+func TestBuildMySQLArgsOmitsTableFlagWhenDisabled(t *testing.T) {
+	args := buildMySQLArgs("/tmp/sqlterm.cnf", false)
+
+	if len(args) != 1 || args[0] != "--defaults-extra-file=/tmp/sqlterm.cnf" {
+		t.Fatalf("unexpected mysql args: %#v", args)
 	}
 }
 
@@ -53,6 +63,33 @@ func TestWriteDefaultsFileUsesPrivateTempFile(t *testing.T) {
 	}
 }
 
+func TestWriteDefaultsSkipsEmptyValues(t *testing.T) {
+	var output bytes.Buffer
+	err := writeDefaults(&output, Config{
+		Username: "user",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	content := output.String()
+	if !strings.Contains(content, `user="user"`) {
+		t.Fatalf("expected user in defaults output:\n%s", content)
+	}
+	for _, excluded := range []string{"password=", "host=", "port="} {
+		if strings.Contains(content, excluded) {
+			t.Fatalf("expected empty %q value to be skipped:\n%s", excluded, content)
+		}
+	}
+}
+
+func TestWriteDefaultsReturnsWriterError(t *testing.T) {
+	err := writeDefaults(errorWriter{}, Config{Username: "user"})
+	if err == nil || !strings.Contains(err.Error(), "write failed") {
+		t.Fatalf("expected writer error, got %v", err)
+	}
+}
+
 func TestWriteDefaultsFileRejectsNewline(t *testing.T) {
 	_, cleanup, err := writeDefaultsFile(Config{
 		Username: "user",
@@ -63,6 +100,44 @@ func TestWriteDefaultsFileRejectsNewline(t *testing.T) {
 	}
 	if err == nil || !strings.Contains(err.Error(), "unsupported newline") {
 		t.Fatalf("expected newline validation error, got %v", err)
+	}
+}
+
+func TestExecMySqlClientReturnsDefaultsFileError(t *testing.T) {
+	originalMySQLExecutable := mysqlExecutable
+	mysqlExecutable = func() (string, error) {
+		t.Fatal("mysql executable should not be resolved")
+		return "", nil
+	}
+	t.Cleanup(func() {
+		mysqlExecutable = originalMySQLExecutable
+	})
+
+	err := ExecMySqlClient(Config{
+		Username: "us\ner",
+		Hostname: "localhost",
+	})
+	if err == nil || !strings.Contains(err.Error(), "unsupported newline") {
+		t.Fatalf("expected defaults file error, got %v", err)
+	}
+}
+
+func TestExecMySqlClientCleansDefaultsFileWhenExecutableLookupFails(t *testing.T) {
+	want := errors.New("mysql missing")
+	originalMySQLExecutable := mysqlExecutable
+	mysqlExecutable = func() (string, error) {
+		return "", want
+	}
+	t.Cleanup(func() {
+		mysqlExecutable = originalMySQLExecutable
+	})
+
+	err := ExecMySqlClient(Config{
+		Username: "user",
+		Hostname: "localhost",
+	})
+	if !errors.Is(err, want) {
+		t.Fatalf("expected executable lookup error, got %v", err)
 	}
 }
 
@@ -118,6 +193,33 @@ grep -q 'port="3307"' "$defaults_file" || exit 6
 	defaultsFile := strings.TrimPrefix(args[0], "--defaults-extra-file=")
 	if _, err := os.Stat(defaultsFile); !os.IsNotExist(err) {
 		t.Fatalf("expected defaults file to be cleaned up, stat err: %v", err)
+	}
+}
+
+func TestExecMySqlClientReturnsCommandFailure(t *testing.T) {
+	tempDir := t.TempDir()
+	mysqlPath := filepath.Join(tempDir, "mysql")
+	script := `#!/bin/sh
+exit 9
+`
+	if err := os.WriteFile(mysqlPath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	originalMySQLExecutable := mysqlExecutable
+	mysqlExecutable = func() (string, error) {
+		return mysqlPath, nil
+	}
+	t.Cleanup(func() {
+		mysqlExecutable = originalMySQLExecutable
+	})
+
+	err := ExecMySqlClient(Config{
+		Username: "user",
+		Hostname: "localhost",
+	})
+	if err == nil || !strings.Contains(err.Error(), "error connecting to mysql") {
+		t.Fatalf("expected command failure, got %v", err)
 	}
 }
 
@@ -184,4 +286,10 @@ func TestIsExecutableFile(t *testing.T) {
 	if isExecutableFile(tempDir) {
 		t.Fatal("expected directory to be rejected")
 	}
+}
+
+type errorWriter struct{}
+
+func (errorWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
 }

@@ -78,7 +78,7 @@ make ci
 ```
 
 Tests write coverage to `reports/coverage.out`; `make coverage-check` and CI
-require at least 80.0% coverage. SonarCloud analysis runs in CI when
+require at least 90.0% coverage. SonarCloud analysis runs in CI when
 `SONAR_TOKEN` is configured.
 There is no local deploy target; tag builds produce release artefacts.
 

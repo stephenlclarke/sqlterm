@@ -15,6 +15,44 @@ func TestIndexDatabasesRequiresKey(t *testing.T) {
 	}
 }
 
+func TestIndexDatabasesRejectsEmptyConfig(t *testing.T) {
+	_, _, err := IndexDatabases(nil)
+	if err == nil || !strings.Contains(err.Error(), "contained no data") {
+		t.Fatalf("expected empty config error, got %v", err)
+	}
+}
+
+func TestIndexDatabasesRequiresUsername(t *testing.T) {
+	_, _, err := IndexDatabases([]DatabaseCredentials{{
+		Key:      "dev",
+		Hostname: "localhost",
+	}})
+	if err == nil || !strings.Contains(err.Error(), "missing required username") {
+		t.Fatalf("expected missing username error, got %v", err)
+	}
+}
+
+func TestIndexDatabasesRequiresHostname(t *testing.T) {
+	_, _, err := IndexDatabases([]DatabaseCredentials{{
+		Key:      "dev",
+		Username: "user",
+	}})
+	if err == nil || !strings.Contains(err.Error(), "missing required hostname") {
+		t.Fatalf("expected missing hostname error, got %v", err)
+	}
+}
+
+func TestIndexDatabasesRejectsNewlineInCredentials(t *testing.T) {
+	_, _, err := IndexDatabases([]DatabaseCredentials{{
+		Key:      "dev",
+		Username: "user",
+		Hostname: "local\nhost",
+	}})
+	if err == nil || !strings.Contains(err.Error(), "unsupported newline") {
+		t.Fatalf("expected newline validation error, got %v", err)
+	}
+}
+
 func TestIndexDatabasesRejectsDuplicateKey(t *testing.T) {
 	db := DatabaseCredentials{Key: "dev", Username: "user", Hostname: "localhost"}
 	_, _, err := IndexDatabases([]DatabaseCredentials{db, db})
@@ -29,6 +67,18 @@ func TestIndexDatabasesRejectsInvalidPort(t *testing.T) {
 		Username: "user",
 		Hostname: "localhost",
 		Port:     "not-a-port",
+	}})
+	if err == nil || !strings.Contains(err.Error(), "invalid port") {
+		t.Fatalf("expected invalid port error, got %v", err)
+	}
+}
+
+func TestIndexDatabasesRejectsOutOfRangePort(t *testing.T) {
+	_, _, err := IndexDatabases([]DatabaseCredentials{{
+		Key:      "dev",
+		Username: "user",
+		Hostname: "localhost",
+		Port:     "65536",
 	}})
 	if err == nil || !strings.Contains(err.Error(), "invalid port") {
 		t.Fatalf("expected invalid port error, got %v", err)

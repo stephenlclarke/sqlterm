@@ -12,7 +12,7 @@ GITLEAKS := $(shell $(GO) env GOPATH)/bin/gitleaks
 GO_JUNIT_REPORT_VERSION ?= v2.1.0
 STATICCHECK_VERSION ?= v0.6.1
 GITLEAKS_VERSION ?= v8.30.1
-COVERAGE_MIN ?= 80.0
+COVERAGE_MIN ?= 90.0
 RELEASE_TARGETS := darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64
 
 .PHONY: all build build-release clean ci coverage-check help run scan security-scan staticcheck test vet
