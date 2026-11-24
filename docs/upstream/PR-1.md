@@ -35,3 +35,8 @@ database was used.
 
 No configuration keys or command-line options change. A DSN now uses the
 existing `database` setting. A second query can start after the first finishes.
+
+## CI follow-up
+
+Load the installed conventional commit rules explicitly in the CI check.
+The check failed before this change and passes with it. Actionlint also passes.

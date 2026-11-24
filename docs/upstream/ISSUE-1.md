@@ -27,3 +27,9 @@ This follow-up belongs to the upstream PR refresh on 24 November 2026. Keep the
 review branch and worktree until the fixes merge into Stephen's protected main
 branch. That merge also updates upstream PR #1. The original local checkout and
 its untracked files are unchanged.
+
+## CI follow-up
+
+The commit-message job installed the conventional rules but did not load them.
+It rejected a valid commit with an empty-rules error. The workflow now loads
+those rules explicitly. The same commit passes, and actionlint passes.
