@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/jpxcz/sqlterm/databases"
 	odbcclient "github.com/jpxcz/sqlterm/odbc_client"
 	"github.com/jpxcz/sqlterm/sqltext"
@@ -370,23 +371,28 @@ func joinPanels(left string, right string, leftWidth int, gutter int) string {
 }
 
 func clipLine(line string, width int) string {
-	if width <= 0 || len(line) <= width {
+	if width <= 0 {
 		return line
 	}
+	tail := "..."
 	if width <= 3 {
-		return line[:width]
+		tail = ""
 	}
-	return line[:width-3] + "..."
+	return ansi.Truncate(line, width, tail)
 }
 
 func padRight(line string, width int) string {
-	if len(line) >= width {
+	used := ansi.StringWidth(line)
+	if used >= width {
 		return line
 	}
-	return line + strings.Repeat(" ", width-len(line))
+	return line + strings.Repeat(" ", width-used)
 }
 
 func (m sqlWorkspaceModel) executeSQL() (tea.Model, tea.Cmd) {
+	if m.running {
+		return m, nil
+	}
 	m = m.formatSQL()
 	if m.err != nil {
 		return m, nil

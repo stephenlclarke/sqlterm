@@ -388,3 +388,40 @@ func workspaceTestDatabase() databases.DatabaseCredentials {
 		Password:  "secret",
 	}
 }
+
+func TestSQLWorkspaceDoesNotSubmitWhileRunning(t *testing.T) {
+	calls := 0
+	model := newSQLWorkspaceModel(workspaceTestDatabase(), workspaceOptions{}, func(context.Context, databases.DatabaseCredentials, string) (odbcclient.QueryResult, error) {
+		calls++
+		return odbcclient.QueryResult{RowsAffected: 1}, nil
+	}, nil)
+	model.editor.SetValue("update orders set total = total + 1")
+	updated, first := model.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	model = updated.(sqlWorkspaceModel)
+	if first == nil {
+		t.Fatal("first execution was not scheduled")
+	}
+	updated, duplicate := model.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	model = updated.(sqlWorkspaceModel)
+	if duplicate != nil {
+		t.Fatal("scheduled a duplicate database write")
+	}
+	updated, _ = model.Update(first())
+	model = updated.(sqlWorkspaceModel)
+	if calls != 1 || model.running {
+		t.Fatalf("calls=%d running=%v", calls, model.running)
+	}
+	_, next := model.Update(tea.KeyMsg{Type: tea.KeyCtrlR})
+	if next == nil {
+		t.Fatal("cannot run again after completion")
+	}
+}
+
+func TestClipAndPadPreserveUnicode(t *testing.T) {
+	if got := clipLine("\u754c\u754c\u754c", 5); got != "\u754c..." {
+		t.Fatalf("bad clip: %q", got)
+	}
+	if got := padRight("\u754c", 4); got != "\u754c  " {
+		t.Fatalf("bad padding: %q", got)
+	}
+}

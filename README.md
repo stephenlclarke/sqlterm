@@ -100,6 +100,10 @@ query over ODBC. Results are displayed in the terminal with execution metrics
 including duration, returned rows, affected rows, column count, and execution
 timestamp.
 
+A second `Ctrl+R` is ignored while a query is running. Formatting preserves escaped
+string values and Unicode identifiers. Leading SQL comments do not hide query
+results. When using a DSN, `database` selects the requested database.
+
 ## Development
 
 ```sh

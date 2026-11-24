@@ -11,6 +11,7 @@ import (
 
 	_ "github.com/alexbrainman/odbc"
 	"github.com/jpxcz/sqlterm/databases"
+	"github.com/xwb1989/sqlparser"
 )
 
 const driverName = "odbc"
@@ -106,15 +107,15 @@ func ConnectionString(db databases.DatabaseCredentials) (string, error) {
 		if db.Port != "" {
 			parts = append(parts, connectionPart("Port", db.Port))
 		}
-		if db.Database != "" {
-			parts = append(parts, connectionPart("Database", db.Database))
-		}
 	} else if db.Hostname != "" {
 		parts = append(parts, connectionPart("DSN", db.Hostname))
 	}
 
 	if len(parts) == 0 {
 		return "", errors.New("database config requires dsn, connection_string, driver, or hostname")
+	}
+	if db.Database != "" {
+		parts = append(parts, connectionPart("Database", db.Database))
 	}
 	if db.Username != "" {
 		parts = append(parts, connectionPart("UID", db.Username))
@@ -170,12 +171,12 @@ func readRows(rows *sql.Rows) ([]string, [][]string, error) {
 }
 
 func returnsRows(statement string) bool {
-	fields := strings.Fields(strings.TrimSpace(statement))
-	if len(fields) == 0 {
-		return false
+	tokenizer := sqlparser.NewStringTokenizer(statement)
+	token, word := tokenizer.Scan()
+	for token == sqlparser.COMMENT {
+		token, word = tokenizer.Scan()
 	}
-
-	switch strings.ToUpper(fields[0]) {
+	switch strings.ToUpper(string(word)) {
 	case "SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "WITH":
 		return true
 	default:

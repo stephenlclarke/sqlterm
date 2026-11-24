@@ -239,3 +239,37 @@ func TestFormatDuration(t *testing.T) {
 func driverNameConstForTest() string {
 	return driverName
 }
+
+func TestClientExecuteQueryWithLeadingComments(t *testing.T) {
+	for _, statement := range []string{"-- report\nSELECT 1", "/* report */SELECT(1)", "# report\nSELECT 1", "/* a */ -- b\nSELECT 1"} {
+		t.Run(statement, func(t *testing.T) {
+			db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			mock.ExpectQuery(statement).WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow("1"))
+			client := NewClientWithOpener(func(string, string) (*sql.DB, error) { return db, nil })
+			result, err := client.Execute(context.Background(), databases.DatabaseCredentials{DSN: "test"}, statement)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(result.Rows) != 1 || result.Rows[0][0] != "1" {
+				t.Fatalf("lost query result: %#v", result)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestConnectionStringPreservesDSNDatabase(t *testing.T) {
+	got, err := ConnectionString(databases.DatabaseCredentials{DSN: "Trading", Database: "orders"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "Database=orders;") {
+		t.Fatalf("database selection lost: %q", got)
+	}
+}
