@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/xwb1989/sqlparser"
 )
@@ -50,6 +51,8 @@ func UppercaseKeywords(statement string) string {
 		case '[':
 			next := copyBracketedIdentifier(&builder, statement, index)
 			index = next
+		case '#':
+			index = copyLineComment(&builder, statement, index)
 		case '-':
 			if index+1 < len(statement) && statement[index+1] == '-' {
 				next := copyLineComment(&builder, statement, index)
@@ -67,7 +70,8 @@ func UppercaseKeywords(statement string) string {
 			builder.WriteByte(ch)
 			index++
 		default:
-			if isIdentStart(rune(ch)) {
+			r, _ := utf8.DecodeRuneInString(statement[index:])
+			if isIdentStart(r) {
 				next := readIdentifier(statement, index)
 				word := statement[index:next]
 				upper := strings.ToUpper(word)
@@ -91,6 +95,12 @@ func copyQuoted(builder *strings.Builder, input string, start int, quote byte) i
 	builder.WriteByte(quote)
 	for index := start + 1; index < len(input); index++ {
 		builder.WriteByte(input[index])
+		// Match the parser's MySQL string escapes without changing literal data.
+		if input[index] == '\\' && quote != '`' && index+1 < len(input) {
+			index++
+			builder.WriteByte(input[index])
+			continue
+		}
 		if input[index] != quote {
 			continue
 		}
@@ -110,6 +120,11 @@ func copyBracketedIdentifier(builder *strings.Builder, input string, start int) 
 	for index := start + 1; index < len(input); index++ {
 		builder.WriteByte(input[index])
 		if input[index] == ']' {
+			if index+1 < len(input) && input[index+1] == ']' {
+				index++
+				builder.WriteByte(input[index])
+				continue
+			}
 			return index + 1
 		}
 	}
@@ -141,10 +156,12 @@ func copyBlockComment(builder *strings.Builder, input string, start int) int {
 }
 
 func readIdentifier(input string, start int) int {
-	for index := start; index < len(input); index++ {
-		if !isIdentPart(rune(input[index])) {
+	for index := start; index < len(input); {
+		ch, size := utf8.DecodeRuneInString(input[index:])
+		if !isIdentPart(ch) {
 			return index
 		}
+		index += size
 	}
 
 	return len(input)
@@ -155,5 +172,5 @@ func isIdentStart(ch rune) bool {
 }
 
 func isIdentPart(ch rune) bool {
-	return ch == '_' || unicode.IsLetter(ch) || unicode.IsDigit(ch)
+	return ch == '_' || unicode.IsLetter(ch) || unicode.IsDigit(ch) || unicode.IsMark(ch)
 }

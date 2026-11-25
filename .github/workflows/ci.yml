@@ -39,6 +39,7 @@ jobs:
           --package @commitlint/cli
           --package @commitlint/config-conventional
           commitlint
+          --extends @commitlint/config-conventional
           --from "${{ github.event.pull_request.base.sha }}"
           --to "${{ github.event.pull_request.head.sha }}"
 

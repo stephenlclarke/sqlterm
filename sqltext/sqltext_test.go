@@ -74,3 +74,22 @@ func TestValidateRejectsEmptySQL(t *testing.T) {
 		t.Fatalf("expected empty statement error, got %v", err)
 	}
 }
+
+func TestUppercaseKeywordsPreservesEscapedData(t *testing.T) {
+	cases := map[string]string{
+		"select e\u0301select from t":            "SELECT e\u0301select FROM t",
+		`select 'it\'s select from here' from t`: `SELECT 'it\'s select from here' FROM t`,
+		`select "a\" select from here" from t`:   `SELECT "a\" select from here" FROM t`,
+		`select 'a\\' from t`:                    `SELECT 'a\\' FROM t`,
+		"select [a]]select] from t":              "SELECT [a]]select] FROM t",
+		"select \u00e9select, \u4e2dfrom from t": "SELECT \u00e9select, \u4e2dfrom FROM t",
+		"select 1 # select from\nfrom t":         "SELECT 1 # select from\nFROM t",
+	}
+	for input, want := range cases {
+		t.Run(input, func(t *testing.T) {
+			if got := UppercaseKeywords(input); got != want {
+				t.Fatalf("want %q, got %q", want, got)
+			}
+		})
+	}
+}
